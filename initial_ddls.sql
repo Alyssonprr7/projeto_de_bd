@@ -8,14 +8,15 @@
 DROP DATABASE IF EXISTS streamers_db;
 CREATE DATABASE streamers_db
     WITH 
-    ENCODING = 'UTF8'
-    TEMPLATE = template0;
+    ENCODING = 'UTF8';
 
 -- Conectar ao banco de dados criado
 \c streamers_db
 
+-- ============================================
+-- LIMPEZA (caso o script seja executado novamente)
+-- ============================================
 
--- Dropping tables if they exist (for recreating the schema)
 DROP TABLE IF EXISTS MecanismoPlat CASCADE;
 DROP TABLE IF EXISTS CartaoCredito CASCADE;
 DROP TABLE IF EXISTS PayPal CASCADE;
@@ -32,6 +33,7 @@ DROP TABLE IF EXISTS StreamerPais CASCADE;
 DROP TABLE IF EXISTS PlataformaUsuario CASCADE;
 DROP TABLE IF EXISTS Usuario CASCADE;
 DROP TABLE IF EXISTS Plataforma CASCADE;
+DROP TABLE IF EXISTS EmpresaPais CASCADE;
 DROP TABLE IF EXISTS Empresa CASCADE;
 DROP TABLE IF EXISTS Pais CASCADE;
 DROP TABLE IF EXISTS Conversao CASCADE;
@@ -56,14 +58,20 @@ CREATE TABLE Pais (
 );
 
 -- Tabela de Empresas
--- Nota: EmpresaPais foi incorporada aqui conforme decisão de normalização
 CREATE TABLE Empresa (
     nro SERIAL PRIMARY KEY,
     nome VARCHAR(200) NOT NULL,
-    nome_fantasia VARCHAR(200),
-    id_nacional VARCHAR(50),
-    pais_origem INTEGER,
-    FOREIGN KEY (pais_origem) REFERENCES Pais(ddi)
+    nome_fantasia VARCHAR(200)
+);
+
+-- Tabela EmpresaPais (relacionamento N:M entre Empresa e Pais)
+CREATE TABLE EmpresaPais (
+    nro_empresa INTEGER,
+    ddi_pais INTEGER,
+    id_nacional VARCHAR(50) NOT NULL,
+    PRIMARY KEY (nro_empresa, ddi_pais),
+    FOREIGN KEY (nro_empresa) REFERENCES Empresa(nro) ON DELETE CASCADE,
+    FOREIGN KEY (ddi_pais) REFERENCES Pais(ddi) ON DELETE CASCADE
 );
 
 -- Tabela de Plataformas
@@ -166,9 +174,10 @@ CREATE TABLE Inscricao (
 -- ============================================
 
 -- Tabela de Vídeos
--- Nota: Adicionado id_video como surrogate key conforme decisão de normalização
+-- Surrogate key dimensionado: nome_canal(100) + nro_plataforma(4) + titulo(300) + dataH(8) = ~412 bytes
+-- Usar BIGINT (8 bytes, suporta até 9.223.372.036.854.775.807 valores)
 CREATE TABLE Video (
-    id_video SERIAL PRIMARY KEY,
+    id_video BIGSERIAL PRIMARY KEY,
     nome_canal VARCHAR(100) NOT NULL,
     nro_plataforma INTEGER NOT NULL,
     titulo VARCHAR(300) NOT NULL,
@@ -183,7 +192,7 @@ CREATE TABLE Video (
 
 -- Tabela de Participações de Streamers em Vídeos
 CREATE TABLE Participa (
-    id_video INTEGER,
+    id_video BIGINT,
     nick_streamer VARCHAR(50),
     PRIMARY KEY (id_video, nick_streamer),
     FOREIGN KEY (id_video) REFERENCES Video(id_video) ON DELETE CASCADE,
@@ -191,10 +200,11 @@ CREATE TABLE Participa (
 );
 
 -- Tabela de Comentários
--- Nota: Adicionado id_comentario como surrogate key conforme decisão de normalização
+-- Surrogate key dimensionado: id_video(8) + nick_usuario(50) + seq(4) = ~62 bytes
+-- Usar BIGINT (8 bytes)
 CREATE TABLE Comentario (
-    id_comentario SERIAL PRIMARY KEY,
-    id_video INTEGER NOT NULL,
+    id_comentario BIGSERIAL PRIMARY KEY,
+    id_video BIGINT NOT NULL,
     nick_usuario VARCHAR(50) NOT NULL,
     seq INTEGER NOT NULL,
     texto TEXT NOT NULL,
@@ -210,10 +220,11 @@ CREATE TABLE Comentario (
 -- ============================================
 
 -- Tabela de Doações (superclasse)
--- Nota: Adicionado id_doacao como surrogate key conforme decisão de normalização
+-- Surrogate key dimensionado: id_comentario(8) + seq_pg(4) = ~12 bytes
+-- Usar BIGINT (8 bytes)
 CREATE TABLE Doacao (
-    id_doacao SERIAL PRIMARY KEY,
-    id_comentario INTEGER NOT NULL,
+    id_doacao BIGSERIAL PRIMARY KEY,
+    id_comentario BIGINT NOT NULL,
     seq_pg INTEGER NOT NULL,
     valor DECIMAL(15, 2) NOT NULL CHECK (valor > 0),
     status VARCHAR(10) NOT NULL CHECK (status IN ('recusado', 'recebido', 'lido')),
@@ -223,21 +234,21 @@ CREATE TABLE Doacao (
 
 -- Tabela de Doações via Bitcoin (subclasse)
 CREATE TABLE BitCoin (
-    id_doacao INTEGER PRIMARY KEY,
+    id_doacao BIGINT PRIMARY KEY,
     TxID VARCHAR(100) NOT NULL UNIQUE,
     FOREIGN KEY (id_doacao) REFERENCES Doacao(id_doacao) ON DELETE CASCADE
 );
 
 -- Tabela de Doações via PayPal (subclasse)
 CREATE TABLE PayPal (
-    id_doacao INTEGER PRIMARY KEY,
+    id_doacao BIGINT PRIMARY KEY,
     IdPayPal VARCHAR(100) NOT NULL UNIQUE,
     FOREIGN KEY (id_doacao) REFERENCES Doacao(id_doacao) ON DELETE CASCADE
 );
 
 -- Tabela de Doações via Cartão de Crédito (subclasse)
 CREATE TABLE CartaoCredito (
-    id_doacao INTEGER PRIMARY KEY,
+    id_doacao BIGINT PRIMARY KEY,
     nro VARCHAR(20) NOT NULL,
     bandeira VARCHAR(50) NOT NULL,
     dataH TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -246,7 +257,7 @@ CREATE TABLE CartaoCredito (
 
 -- Tabela de Doações via Mecanismo da Plataforma (subclasse)
 CREATE TABLE MecanismoPlat (
-    id_doacao INTEGER PRIMARY KEY,
+    id_doacao BIGINT PRIMARY KEY,
     nro_plataforma INTEGER NOT NULL,
     seq_plataforma INTEGER NOT NULL,
     FOREIGN KEY (id_doacao) REFERENCES Doacao(id_doacao) ON DELETE CASCADE,
