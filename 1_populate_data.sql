@@ -105,7 +105,7 @@ BEGIN
     SELECT 
         e.nro,
         (ARRAY[1, 55, 44, 81, 49, 33, 34, 39, 61, 82, 86, 52, 91, 41, 46, 64, 54])[1 + (RANDOM() * 16)::INTEGER],
-        LPAD((e.nro * 12345678)::TEXT, 14, '0')
+        LPAD((e.nro::bigint * 12345678)::TEXT, 14, '0')
     FROM Empresa e
     ON CONFLICT DO NOTHING;
     

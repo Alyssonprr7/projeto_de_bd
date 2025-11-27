@@ -14,20 +14,14 @@ ORDER BY e.nome, p.valor DESC;
 
 -- Questão 2
 SELECT
-    u.nick AS nick_usuario,
-    COUNT(DISTINCT (i.nome_canal, i.nro_plataforma)) AS qtd_canais_membro,
-    SUM(nc.valor) AS valor_mensal_total
-FROM Usuario u
-         INNER JOIN Inscricao i ON u.nick = i.nick_membro
-         INNER JOIN NivelCanal nc ON
-            i.nome_canal = nc.nome_canal AND
-            i.nro_plataforma = nc.nro_plataforma AND
-            i.nivel = nc.nivel
-GROUP BY u.nick
-ORDER BY valor_mensal_total DESC;
+    nick_usuario,
+    qtd_canais_assinados AS qtd_canais_membro,
+    valor_fatura_mensal AS valor_mensal_total
+FROM vw_assinaturas_usuario
+ORDER BY valor_fatura_mensal DESC;
 
 -- Questão 3
-SELECT 
+SELECT
     nome_canal,
     nro_plataforma,
     qtd_doacoes,
@@ -36,21 +30,23 @@ FROM vw_receita_doacoes
 ORDER BY total_doacoes DESC;
 
 -- Questão 4
-SELECT 
-    nome_canal,
-    nro_plataforma,
-    titulo,
-    data_video,
+SELECT
+    v.nome_canal,
+    v.nro_plataforma,
+    v.titulo,
+    v.dataH as data_video,
     COUNT(*) as qtd_doacoes_lidas,
     SUM(valor) as total_doacoes_lidas
-FROM vw_doacoes_detalhadas
-WHERE status = 'lido'
-GROUP BY nome_canal, nro_plataforma, titulo, data_video
+FROM Video v
+         INNER JOIN Comentario c ON v.id_video = c.id_video
+         INNER JOIN Doacao d ON c.id_comentario = d.id_comentario
+WHERE d.status = 'lido'
+GROUP BY v.nome_canal, v.nro_plataforma, v.titulo, v.dataH
 ORDER BY SUM(valor) DESC;
 
 
 -- Questão 5
-SELECT 
+SELECT
     nome_canal,
     nro_plataforma,
     qtd_patrocinadores,
@@ -60,19 +56,20 @@ ORDER BY total_patrocinio DESC
 LIMIT 10;
 
 -- Questão 6
-SELECT 
+SELECT
     nome_canal,
     nro_plataforma,
     qtd_membros,
     total_membros
 FROM vw_receita_membros
 ORDER BY total_membros DESC
-LIMIT 10; 
+LIMIT 10;
 
 -- Questão 7
-SELECT 
+SELECT
     nome_canal,
     nro_plataforma,
+    qtd_videos_com_doacoes,
     qtd_doacoes,
     total_doacoes
 FROM vw_receita_doacoes
@@ -81,7 +78,7 @@ LIMIT 10;
 
 
 -- Questão 8
-SELECT 
+SELECT
     nome_canal,
     nro_plataforma,
     nick_streamer,

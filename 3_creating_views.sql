@@ -1,36 +1,27 @@
 -- --------------------------------------------------------------------------------
--- VIEW 1: vw_doacoes_detalhadas (VIRTUAL)
--- Objetivo: Encapsular a lógica de JOIN entre Video, Comentario e Doacao
--- Utilizada nas consultas: 3, 4, 7 e como base para vw_receita_doacoes
+-- VIEW 1: vw_assinaturas_usuario (VIRTUAL)
+-- Objetivo: Consolidar os gastos recorrentes (mensais) de cada usuário.
+-- Justificativa: Abstrai o cálculo financeiro de mensalidade. Em vez de o desenvolvedor
+-- ter que buscar o valor de cada nível em cada canal, ele consulta apenas "quanto esse user gasta".
 -- --------------------------------------------------------------------------------
-CREATE OR REPLACE VIEW vw_doacoes_detalhadas AS
-SELECT 
-    v.id_video,
-    v.nome_canal,
-    v.nro_plataforma,
-    v.titulo,
-    v.dataH as data_video,
-    v.tema,
-    v.duracao,
-    v.visu_simul,
-    v.visu_total,
-    c.id_comentario,
-    c.nick_usuario,
-    c.seq as seq_comentario,
-    c.dataH as data_comentario,
-    c.texto as texto_comentario,
-    c.coment_on,
-    d.seq_pg as seq_doacao,
-    d.valor,
-    d.status
-FROM Video v
-INNER JOIN Comentario c ON v.id_video = c.id_video
-INNER JOIN Doacao d ON c.id_comentario = d.id_comentario;
 
-COMMENT ON VIEW vw_doacoes_detalhadas IS 
-'View virtual que consolida informações de vídeos, comentários e doações. 
-Utiliza identificadores artificiais para simplificar JOINs.';
+CREATE OR REPLACE VIEW vw_assinaturas_usuario AS
+SELECT
+    i.nick_membro as nick_usuario,
+    u.pais_residencia,
+    COUNT(DISTINCT i.nome_canal || i.nro_plataforma) as qtd_canais_assinados,
+    SUM(nc.valor) as valor_fatura_mensal,
+    ROUND(AVG(nc.valor), 2) as media_gasto_por_canal -- Informação não solicitada mas que pode ser útil no futuro da empresa
+FROM Inscricao i
+         INNER JOIN Usuario u ON i.nick_membro = u.nick
+         INNER JOIN NivelCanal nc ON
+    i.nome_canal = nc.nome_canal AND
+    i.nro_plataforma = nc.nro_plataforma AND
+    i.nivel = nc.nivel
+GROUP BY i.nick_membro, u.pais_residencia;
 
+COMMENT ON VIEW vw_assinaturas_usuario IS
+    'View analítica que consolida a carteira de assinaturas dos usuários, calculando o comprometimento mensal financeiro (MRR por usuário).';
 
 -- --------------------------------------------------------------------------------
 -- VIEW 2: vw_receita_patrocinio (VIRTUAL)
@@ -47,7 +38,7 @@ FROM Patrocinio p
 GROUP BY p.nome_canal, p.nro_plataforma;
 
 COMMENT ON VIEW vw_receita_patrocinio IS
-    'View virtual que agrega receitas de patrocínios por canal. 
+    'View virtual que agrega receitas de patrocínios por canal.
     Utilizada para análises de patrocínio e como componente da view consolidada.';
 
 -- --------------------------------------------------------------------------------
@@ -69,7 +60,7 @@ FROM Inscricao i
 GROUP BY i.nome_canal, i.nro_plataforma;
 
 COMMENT ON VIEW vw_receita_membros IS
-    'View virtual que agrega receitas mensais de membros por canal. 
+    'View virtual que agrega receitas mensais de membros por canal.
     Calcula o valor total considerando os níveis de assinatura de cada membro.';
 
 -- --------------------------------------------------------------------------------
@@ -79,24 +70,25 @@ COMMENT ON VIEW vw_receita_membros IS
 -- --------------------------------------------------------------------------------
 CREATE OR REPLACE VIEW vw_receita_doacoes AS
 SELECT
-    nome_canal,
-    nro_plataforma,
+    v.nome_canal,
+    v.nro_plataforma,
+    COUNT(DISTINCT v.id_video) AS qtd_videos_com_doacoes,
     COUNT(*) as qtd_doacoes,
     COUNT(CASE WHEN status = 'lido' THEN 1 END) as qtd_doacoes_lidas,
     COUNT(CASE WHEN status = 'recebido' THEN 1 END) as qtd_doacoes_recebidas,
     SUM(CASE WHEN status = 'lido' THEN valor ELSE 0 END) as total_doacoes_lidas,
     SUM(CASE WHEN status IN ('recebido', 'lido') THEN valor ELSE 0 END) as total_doacoes
-FROM vw_doacoes_detalhadas
-GROUP BY nome_canal, nro_plataforma;
+FROM Video v
+INNER JOIN Comentario c ON v.id_video = c.id_video
+INNER JOIN Doacao d ON c.id_comentario = d.id_comentario
+GROUP by v.nro_plataforma, v.nome_canal;
 
 COMMENT ON VIEW vw_receita_doacoes IS
-    'View virtual que agrega receitas de doações por canal. 
+    'View virtual que agrega receitas de doações por canal.
     Separa doações por status (lido, recebido, recusado) para análises detalhadas.';
-    
-    
-    
-    
-    
+
+
+
 -- --------------------------------------------------------------------------------
 -- VIEW 5: mv_faturamento_consolidado (MATERIALIZADA)
 -- Objetivo: Consolidar todas as fontes de receita dos canais em um snapshot
@@ -145,9 +137,9 @@ WITH DATA -- Já popula os dados na criação;
 
 COMMENT ON MATERIALIZED VIEW mv_faturamento_consolidado IS
     'View materializada que consolida todas as fontes de receita dos canais.
-    Atualizada 2x ao dia (08h e 20h) para dashboards executivos e análises gerenciais.';
-    
-    
+    Atualizada 2x ao dia (5h e 15h em UTC) para dashboards executivos e análises gerenciais.';
+
+
 -- --------------------------------------------------------------------------------
 -- Refresh da View Materializada
 -- --------------------------------------------------------------------------------
