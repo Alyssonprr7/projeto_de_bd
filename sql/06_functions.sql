@@ -10,10 +10,10 @@
 CREATE OR REPLACE FUNCTION fn_canais_patrocinados(f_empresa INT DEFAULT NULL)
 RETURNS TABLE(
     nro_empresa INT,
-    nome_empresa TEXT,
-    nome_canal TEXT,
+    nome_empresa VARCHAR(200),
+    nome_canal VARCHAR(100),
     nro_plataforma INT,
-    nome_plataforma TEXT,
+    nome_plataforma VARCHAR(200),
     valor_patrocinio NUMERIC
 )
 LANGUAGE plpgsql
@@ -42,9 +42,9 @@ $$;
 -- - Filtrar por usuário (opcional)
 -- Retorna número de canais onde o usuário é membro e soma do valor mensal
 -- =========================================
-CREATE OR REPLACE FUNCTION fn_usuario_membros(f_nick TEXT DEFAULT NULL)
+CREATE OR REPLACE FUNCTION fn_usuario_membros(f_nick VARCHAR(50) DEFAULT NULL)
 RETURNS TABLE(
-    nick_usuario TEXT,
+    nick_usuario  VARCHAR(50),
     qtd_canais_membro BIGINT,
     valor_mensal_total NUMERIC
 )
@@ -53,33 +53,27 @@ AS $$
 BEGIN
     RETURN QUERY
     SELECT
-        u.nick,
-        COUNT(DISTINCT (i.nome_canal, i.nro_plataforma))::BIGINT,
-        COALESCE(SUM(nc.valor), 0)::NUMERIC
-    FROM Usuario u
-    JOIN Inscricao i ON u.nick = i.nick_membro
-    JOIN NivelCanal nc ON i.nome_canal = nc.nome_canal
-        AND i.nro_plataforma = nc.nro_plataforma
-        AND i.nivel = nc.nivel
-    WHERE f_nick IS NULL OR u.nick = f_nick
-    GROUP BY u.nick
-    ORDER BY valor_mensal_total DESC;
+        v.nick_usuario,
+        v.qtd_canais_assinados,
+        v.valor_fatura_mensal
+    FROM vw_assinaturas_usuario v
+    WHERE f_nick IS NULL OR v.nick_usuario = f_nick
+    ORDER BY v.valor_fatura_mensal DESC;
 END;
 $$;
 
 
+
 -- =========================================
 -- Função Questão 3
--- - Filtrar por canal (opcional): fornecer nome e/ou nro_plataforma
+-- - Filtrar por canal
 -- =========================================
 CREATE OR REPLACE FUNCTION fn_canais_doacoes(
-    f_nome_canal TEXT DEFAULT NULL,
-    f_nro_plataforma INT DEFAULT NULL
+    f_nome_canal VARCHAR(100) DEFAULT NULL
 )
 RETURNS TABLE(
-    nome_canal TEXT,
+    nome_canal VARCHAR(100),
     nro_plataforma INT,
-    nome_plataforma TEXT,
     qtd_doacoes BIGINT,
     total_doacoes NUMERIC
 )
@@ -90,38 +84,33 @@ BEGIN
     SELECT
         v.nome_canal,
         v.nro_plataforma,
-        pl.nome,
-        COUNT(d.id_doacao)::BIGINT,
-        COALESCE(SUM(d.valor),0)::NUMERIC
-    FROM Video v
-    JOIN Plataforma pl ON v.nro_plataforma = pl.nro
-    JOIN Comentario c ON v.id_video = c.id_video
-    JOIN Doacao d ON c.id_comentario = d.id_comentario
+        v.qtd_doacoes,
+        v.total_doacoes
+    FROM vw_receita_doacoes v
     WHERE (f_nome_canal IS NULL OR v.nome_canal = f_nome_canal)
-      AND (f_nro_plataforma IS NULL OR v.nro_plataforma = f_nro_plataforma)
-    GROUP BY v.nome_canal, v.nro_plataforma, pl.nome
-    ORDER BY total_doacoes DESC;
+    ORDER BY v.total_doacoes DESC;
 END;
-$$;
 
+$$;
 
 -- =========================================
 -- Função Questão 4
 -- - Soma das doações geradas por comentários que foram lidos por vídeo
 -- - Filtrar por id_video (opcional)
 -- =========================================
+
 CREATE OR REPLACE FUNCTION fn_doacoes_lidas_por_video(f_id_video BIGINT DEFAULT NULL)
 RETURNS TABLE(
     id_video BIGINT,
-    titulo_video TEXT,
-    nome_canal TEXT,
+    titulo_video VARCHAR(300),
+    nome_canal VARCHAR(100),
     nro_plataforma INT,
-    nome_plataforma TEXT,
     qtd_doacoes_lidas BIGINT,
     total_doacoes_lidas NUMERIC
 )
 LANGUAGE plpgsql
 AS $$
+
 BEGIN
     RETURN QUERY
     SELECT
@@ -129,173 +118,79 @@ BEGIN
         v.titulo,
         v.nome_canal,
         v.nro_plataforma,
-        pl.nome,
-        COUNT(d.id_doacao)::BIGINT,
-        COALESCE(SUM(d.valor),0)::NUMERIC
+        COUNT(*) FILTER (WHERE d.status = 'lido'),
+        SUM(d.valor) FILTER (WHERE d.status = 'lido')
     FROM Video v
-    JOIN Plataforma pl ON v.nro_plataforma = pl.nro
-    JOIN Comentario c ON v.id_video = c.id_video
-    JOIN Doacao d ON c.id_comentario = d.id_comentario
-    WHERE d.status = 'lido'
-      AND (f_id_video IS NULL OR v.id_video = f_id_video)
-    GROUP BY v.id_video, v.titulo, v.nome_canal, v.nro_plataforma, pl.nome
-    ORDER BY total_doacoes_lidas DESC;
+	    JOIN Comentario c ON v.id_video = c.id_video
+	    JOIN Doacao d ON c.id_comentario = d.id_comentario
+    WHERE (f_id_video IS NULL OR v.id_video = f_id_video)
+	AND (d.status='lido')
+    GROUP BY v.id_video, v.titulo, v.nome_canal, v.nro_plataforma
+    ORDER BY SUM(d.valor) DESC;
 END;
 $$;
 
 
 -- =========================================
--- Função Questão 5
--- - Top k canais por patrocínio
+-- Função Questões 5, 6, 7 e 8
+-- - Top k canais por faturamento total (patrocínio + membros + doações) e separados por tipo
 -- =========================================
-CREATE OR REPLACE FUNCTION fn_top_patrocinio(k INT DEFAULT 10)
+
+CREATE OR REPLACE FUNCTION fn_top_k(
+    p_tipo TEXT DEFAULT 'faturamento',
+    p_k INT DEFAULT 10
+)
 RETURNS TABLE(
-    nome_canal TEXT,
+    nome_canal VARCHAR(100),
     nro_plataforma INT,
-    nome_plataforma TEXT,
     qtd_patrocinadores BIGINT,
-    total_patrocinio NUMERIC
-)
-LANGUAGE plpgsql
-AS $$
-BEGIN
-    RETURN QUERY
-    SELECT
-        c.nome,
-        c.nro_plataforma,
-        pl.nome,
-        COUNT(p.nro_empresa)::BIGINT,
-        COALESCE(SUM(p.valor),0)::NUMERIC
-    FROM Canal c
-    JOIN Plataforma pl ON c.nro_plataforma = pl.nro
-    JOIN Patrocinio p ON c.nome = p.nome_canal AND c.nro_plataforma = p.nro_plataforma
-    GROUP BY c.nome, c.nro_plataforma, pl.nome
-    ORDER BY total_patrocinio DESC
-    LIMIT GREATEST(1, COALESCE(k,10));
-END;
-$$;
-
-
--- =========================================
--- Função Questão 6
--- - Top k canais por receita de membros
--- =========================================
-CREATE OR REPLACE FUNCTION fn_top_membros(k INT DEFAULT 10)
-RETURNS TABLE(
-    nome_canal TEXT,
-    nro_plataforma INT,
-    nome_plataforma TEXT,
+    total_patrocinio NUMERIC,
     qtd_membros BIGINT,
-    receita_mensal_membros NUMERIC
-)
-LANGUAGE plpgsql
-AS $$
-BEGIN
-    RETURN QUERY
-    SELECT
-        c.nome,
-        c.nro_plataforma,
-        pl.nome,
-        COUNT(i.nick_membro)::BIGINT,
-        COALESCE(SUM(nc.valor),0)::NUMERIC
-    FROM Canal c
-    JOIN Plataforma pl ON c.nro_plataforma = pl.nro
-    JOIN Inscricao i ON c.nome = i.nome_canal AND c.nro_plataforma = i.nro_plataforma
-    JOIN NivelCanal nc ON i.nome_canal = nc.nome_canal AND i.nro_plataforma = nc.nro_plataforma AND i.nivel = nc.nivel
-    GROUP BY c.nome, c.nro_plataforma, pl.nome
-    ORDER BY receita_mensal_membros DESC
-    LIMIT GREATEST(1, COALESCE(k,10));
-END;
-$$;
-
-
--- =========================================
--- Função Questão 7
--- - Top k canais que mais receberam doações (todos os vídeos)
--- =========================================
-CREATE OR REPLACE FUNCTION fn_top_doacoes(k INT DEFAULT 10)
-RETURNS TABLE(
-    nome_canal TEXT,
-    nro_plataforma INT,
-    nome_plataforma TEXT,
-    qtd_videos_com_doacoes BIGINT,
-    qtd_doacoes BIGINT,
-    total_doacoes NUMERIC
-)
-LANGUAGE plpgsql
-AS $$
-BEGIN
-    RETURN QUERY
-    SELECT
-        v.nome_canal,
-        v.nro_plataforma,
-        pl.nome,
-        COUNT(DISTINCT v.id_video)::BIGINT,
-        COUNT(d.id_doacao)::BIGINT,
-        COALESCE(SUM(d.valor),0)::NUMERIC
-    FROM Video v
-    JOIN Plataforma pl ON v.nro_plataforma = pl.nro
-    JOIN Comentario c ON v.id_video = c.id_video
-    JOIN Doacao d ON c.id_comentario = d.id_comentario
-    GROUP BY v.nome_canal, v.nro_plataforma, pl.nome
-    ORDER BY total_doacoes DESC
-    LIMIT GREATEST(1, COALESCE(k,10));
-END;
-$$;
-
-
--- =========================================
--- Função Questão 8
--- - Top k canais por faturamento total (patrocínio + membros + doações)
--- =========================================
-CREATE OR REPLACE FUNCTION fn_top_faturamento(k INT DEFAULT 10)
-RETURNS TABLE(
-    nome_canal TEXT,
-    nro_plataforma INT,
-    nome_plataforma TEXT,
-    receita_patrocinio NUMERIC,
     receita_membros_mensal NUMERIC,
-    receita_doacoes NUMERIC,
+    qtd_doacoes BIGINT,
+    total_doacoes NUMERIC,
     faturamento_total NUMERIC
 )
 LANGUAGE plpgsql
 AS $$
 BEGIN
     RETURN QUERY
-    WITH
-    patrocinio_canal AS (
-        SELECT p.nome_canal, p.nro_plataforma, SUM(p.valor) AS total_patrocinio
-        FROM Patrocinio p
-        GROUP BY p.nome_canal, p.nro_plataforma
-    ),
-    membros_canal AS (
-        SELECT i.nome_canal, i.nro_plataforma, SUM(nc.valor) AS total_membros
-        FROM Inscricao i
-        JOIN NivelCanal nc ON i.nome_canal = nc.nome_canal AND i.nro_plataforma = nc.nro_plataforma AND i.nivel = nc.nivel
-        GROUP BY i.nome_canal, i.nro_plataforma
-    ),
-    doacoes_canal AS (
-        SELECT v.nome_canal, v.nro_plataforma, SUM(d.valor) AS total_doacoes
-        FROM Video v
-        JOIN Comentario c ON v.id_video = c.id_video
-        JOIN Doacao d ON c.id_comentario = d.id_comentario
-        GROUP BY v.nome_canal, v.nro_plataforma
-    )
     SELECT
-        c.nome,
-        c.nro_plataforma,
-        pl.nome,
-        COALESCE(pc.total_patrocinio, 0)::NUMERIC,
-        COALESCE(mc.total_membros, 0)::NUMERIC,
-        COALESCE(dc.total_doacoes, 0)::NUMERIC,
-        (COALESCE(pc.total_patrocinio, 0) + COALESCE(mc.total_membros, 0) + COALESCE(dc.total_doacoes, 0))::NUMERIC
-    FROM Canal c
-    JOIN Plataforma pl ON c.nro_plataforma = pl.nro
-    LEFT JOIN patrocinio_canal pc ON c.nome = pc.nome_canal AND c.nro_plataforma = pc.nro_plataforma
-    LEFT JOIN membros_canal mc ON c.nome = mc.nome_canal AND c.nro_plataforma = mc.nro_plataforma
-    LEFT JOIN doacoes_canal dc ON c.nome = dc.nome_canal AND c.nro_plataforma = dc.nro_plataforma
-    WHERE (COALESCE(pc.total_patrocinio, 0) + COALESCE(mc.total_membros, 0) + COALESCE(dc.total_doacoes, 0)) > 0
-    ORDER BY faturamento_total DESC
-    LIMIT GREATEST(1, COALESCE(k,10));
+        mv.nome_canal,
+        mv.nro_plataforma,
+        mv.qtd_patrocinadores,
+        mv.total_patrocinio,
+        mv.qtd_membros,
+        mv.total_membros AS receita_membros_mensal,
+        mv.qtd_doacoes,
+        mv.total_doacoes,
+        mv.faturamento_total
+    FROM mv_faturamento_consolidado mv
+    WHERE
+        CASE lower(p_tipo)
+            WHEN 'patrocinio' THEN mv.total_patrocinio > 0
+            WHEN 'membros'     THEN mv.total_membros > 0
+            WHEN 'doacoes'     THEN mv.total_doacoes > 0
+            ELSE mv.faturamento_total > 0
+        END
+    ORDER BY
+        CASE lower(p_tipo)
+            WHEN 'patrocinio' THEN mv.total_patrocinio
+            WHEN 'membros'     THEN mv.total_membros
+            WHEN 'doacoes'     THEN mv.total_doacoes
+            ELSE mv.faturamento_total
+        END DESC
+    LIMIT GREATEST(1, COALESCE(p_k, 10));
 END;
 $$;
+
+-- Escolhemos usar fn_top_k para consultar a
+-- mv_faturamento_consolidado, porque ela agrega todas as receitas do sistema
+-- (patrocínios, membros e doações).
+
+-- Isso elimina a necessidade de múltiplos JOINs e reagrupamentos dentro da
+-- função, reduzindo significativamente o custo de execução e evitando
+-- processamento redundante.
+
+-- A MV é atualizada duas vezes ao dia, o que mantém o relatório atualizado
+-- ao mesmo tempo em que garante alta performance nas consultas analíticas.

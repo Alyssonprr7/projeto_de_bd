@@ -42,25 +42,6 @@ DROP TABLE IF EXISTS Conversao CASCADE;
 -- TABELAS BASE
 -- ============================================
 
--- Tabela de Empresas
-CREATE TABLE Empresa (
-    nro SERIAL PRIMARY KEY,
-    nome VARCHAR(200) NOT NULL,
-    nome_fantasia VARCHAR(200)
-);
-
--- Tabela de Plataformas
-CREATE TABLE Plataforma (
-    nro SERIAL PRIMARY KEY,
-    nome VARCHAR(100) NOT NULL UNIQUE,
-    qtd_users INTEGER DEFAULT 0 CHECK (qtd_users >= 0),
-    empresa_fund INTEGER NOT NULL,
-    empresa_respo INTEGER NOT NULL,
-    data_fund DATE NOT NULL,
-    FOREIGN KEY (empresa_fund) REFERENCES Empresa(nro),
-    FOREIGN KEY (empresa_respo) REFERENCES Empresa(nro)
-);
-
 -- Tabela de Conversão de Moedas
 CREATE TABLE Conversao (
     moeda VARCHAR(10) PRIMARY KEY,
@@ -74,6 +55,35 @@ CREATE TABLE Pais (
     nome VARCHAR(100) NOT NULL UNIQUE,
     moeda VARCHAR(10) NOT NULL,
     FOREIGN KEY (moeda) REFERENCES Conversao(moeda)
+);
+
+-- Tabela de Empresas
+CREATE TABLE Empresa (
+    nro SERIAL PRIMARY KEY,
+    nome VARCHAR(200) NOT NULL,
+    nome_fantasia VARCHAR(200)
+);
+
+-- Tabela EmpresaPais (relacionamento N:M entre Empresa e Pais)
+CREATE TABLE EmpresaPais (
+    nro_empresa INTEGER,
+    ddi_pais INTEGER,
+    id_nacional VARCHAR(50) NOT NULL,
+    PRIMARY KEY (nro_empresa, ddi_pais),
+    FOREIGN KEY (nro_empresa) REFERENCES Empresa(nro) ON DELETE CASCADE,
+    FOREIGN KEY (ddi_pais) REFERENCES Pais(ddi) ON DELETE CASCADE
+);
+
+-- Tabela de Plataformas
+CREATE TABLE Plataforma (
+    nro SERIAL PRIMARY KEY,
+    nome VARCHAR(100) NOT NULL UNIQUE,
+    qtd_users INTEGER DEFAULT 0 CHECK (qtd_users >= 0),
+    empresa_fund INTEGER NOT NULL,
+    empresa_respo INTEGER NOT NULL,
+    data_fund DATE NOT NULL,
+    FOREIGN KEY (empresa_fund) REFERENCES Empresa(nro),
+    FOREIGN KEY (empresa_respo) REFERENCES Empresa(nro)
 );
 
 -- Tabela de Usuários
@@ -105,16 +115,6 @@ CREATE TABLE StreamerPais (
     FOREIGN KEY (nick_streamer) REFERENCES Usuario(nick) ON DELETE CASCADE,
     FOREIGN KEY (ddi_pais) REFERENCES Pais(ddi),
     UNIQUE (ddi_pais, nro_passaporte)
-);
-
--- Tabela EmpresaPais (relacionamento N:M entre Empresa e Pais)
-CREATE TABLE EmpresaPais (
-    nro_empresa INTEGER,
-    ddi_pais INTEGER,
-    id_nacional VARCHAR(50) NOT NULL,
-    PRIMARY KEY (nro_empresa, ddi_pais),
-    FOREIGN KEY (nro_empresa) REFERENCES Empresa(nro) ON DELETE CASCADE,
-    FOREIGN KEY (ddi_pais) REFERENCES Pais(ddi) ON DELETE CASCADE
 );
 
 -- ============================================
