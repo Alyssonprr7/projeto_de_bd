@@ -630,3 +630,43 @@ COMMENT ON PROCEDURE popular_banco IS
     - Múltiplos vídeos e comentários por canal
 
     Uso: CALL popular_banco(500);';
+    
+    
+    
+CREATE OR REPLACE PROCEDURE limpar_dados()
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RAISE NOTICE 'Limpando todos os dados do banco...';
+
+    DELETE FROM MecanismoPlat;
+    DELETE FROM CartaoCredito;
+    DELETE FROM PayPal;
+    DELETE FROM BitCoin;
+    DELETE FROM Doacao;
+    DELETE FROM Comentario;
+    DELETE FROM Participa;
+    DELETE FROM Video;
+    DELETE FROM Inscricao;
+    DELETE FROM NivelCanal;
+    DELETE FROM Patrocinio;
+    DELETE FROM Canal;
+    DELETE FROM StreamerPais;
+    DELETE FROM PlataformaUsuario;
+    DELETE FROM Usuario;
+    DELETE FROM Plataforma;
+    DELETE FROM EmpresaPais;
+    DELETE FROM Empresa;
+    DELETE FROM Pais;
+    DELETE FROM Conversao;
+
+    -- Reset sequences
+    ALTER SEQUENCE empresa_nro_seq RESTART WITH 1;
+    ALTER SEQUENCE plataforma_nro_seq RESTART WITH 1;
+    ALTER SEQUENCE video_id_video_seq RESTART WITH 1;
+    ALTER SEQUENCE comentario_id_comentario_seq RESTART WITH 1;
+    ALTER SEQUENCE doacao_id_doacao_seq RESTART WITH 1;
+
+    RAISE NOTICE 'Dados limpos com sucesso!';
+END;
+$$;

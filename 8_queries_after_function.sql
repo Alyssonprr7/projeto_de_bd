@@ -1,6 +1,6 @@
 -- Consulta 1
 SELECT * FROM fn_canais_patrocinados(); -- todos
-SELECT * FROM fn_canais_patrocinados(2) -- filtrar por nro_empresa
+SELECT * FROM fn_canais_patrocinados(143); -- filtrar por nro_empresa
 
 -- Consulta 2
 SELECT * FROM fn_usuario_membros(); -- todos
@@ -8,7 +8,7 @@ SELECT * FROM fn_usuario_membros('user_271'); -- filtrar por nick_usuario
 
 -- Consulta 3
 SELECT * FROM fn_canais_doacoes(); -- todos
-SELECT * FROM fn_canais_doacoes('user_6_Twitch_1'); -- filtrar por nome do canal
+SELECT * FROM fn_canais_doacoes('user_1_3_ch1'); -- filtrar por nome do canal
 
 -- Consulta 4
 SELECT * FROM fn_doacoes_lidas_por_video();  -- todo
