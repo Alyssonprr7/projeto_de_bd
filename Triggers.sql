@@ -1,149 +1,207 @@
--- Trigger para Atualizar qtd_users da Plataforma
+--Trigger para manter Plataforma.qtd_users atualizada
 
-CREATE OR REPLACE FUNCTION atualizar_qtd_users_plataforma()
+CREATE OR REPLACE FUNCTION trg_atualizar_qtd_users()
 RETURNS TRIGGER AS $$
 BEGIN
     IF TG_OP = 'INSERT' THEN
-        UPDATE Plataforma 
+        UPDATE Plataforma
         SET qtd_users = qtd_users + 1
         WHERE nro = NEW.nro_plataforma;
+
     ELSIF TG_OP = 'DELETE' THEN
-        UPDATE Plataforma 
+        UPDATE Plataforma
         SET qtd_users = qtd_users - 1
         WHERE nro = OLD.nro_plataforma;
-    END IF;
-    RETURN COALESCE(NEW, OLD);
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE TRIGGER trg_atualizar_qtd_users_plataforma
-AFTER INSERT OR DELETE ON PlataformaUsuario
-FOR EACH ROW EXECUTE FUNCTION atualizar_qtd_users_plataforma();
-
-
--- Trigger para Atualizar qtd_visualizacoes do Canal
-
-CREATE OR REPLACE FUNCTION atualizar_visualizacoes_canal()
-RETURNS TRIGGER AS $$
-BEGIN
-    UPDATE Canal 
-    SET qtd_visualizacoes = (
-        SELECT COALESCE(SUM(visu_total), 0)
-        FROM Video 
-        WHERE nome_canal = COALESCE(NEW.nome_canal, OLD.nome_canal)
-        AND nro_plataforma = COALESCE(NEW.nro_plataforma, OLD.nro_plataforma)
-    )
-    WHERE nome = COALESCE(NEW.nome_canal, OLD.nome_canal)
-    AND nro_plataforma = COALESCE(NEW.nro_plataforma, OLD.nro_plataforma);
-    
-    RETURN COALESCE(NEW, OLD);
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE TRIGGER trg_atualizar_visualizacoes_canal
-AFTER INSERT OR UPDATE OR DELETE ON Video
-FOR EACH ROW EXECUTE FUNCTION atualizar_visualizacoes_canal();
-
--- Trigger para Conversão Automática de Valores em Dólar
-
-CREATE OR REPLACE FUNCTION converter_valor_dolar()
-RETURNS TRIGGER AS $$
-DECLARE
-    fator_conversao DECIMAL;
-    pais_ddi VARCHAR;
-BEGIN
-    -- Obter DDI do país da empresa
-    SELECT ep.ddi_pais INTO pais_ddi
-    FROM EmpresaPais ep
-    WHERE ep.nro_empresa = NEW.nro_empresa
-    LIMIT 1;
-        
-    -- Obter fator de conversão
-    SELECT c.fator_conver INTO fator_conversao
-    FROM Pais p
-    JOIN Conversao c ON p.moeda = c.moeda
-    WHERE p.DDI = pais_ddi;
-        
-    -- Armazenar valor convertido em coluna adicional
-    NEW.valor_dolar := NEW.valor * fator_conversao;
-    
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE TRIGGER trg_converter_patrocinio_dolar
-BEFORE INSERT ON Patrocinio
-FOR EACH ROW EXECUTE FUNCTION converter_valor_dolar();
-
-
--- Trigger para Validação de Streamer no Canal
-CREATE OR REPLACE FUNCTION validar_streamer_canal()
-RETURNS TRIGGER AS $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM StreamerPais 
-        WHERE nick_streamer = NEW.nick_streamer
-    ) THEN
-        RAISE EXCEPTION 'Usuário % não é um streamer registrado', NEW.nick_streamer;
-    END IF;
-    
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE TRIGGER trg_validar_streamer_canal
-BEFORE INSERT ON Canal
-FOR EACH ROW EXECUTE FUNCTION validar_streamer_canal();
-
-
--- Trigger para Validação de Doação com Base na Inscrição
-CREATE OR REPLACE FUNCTION validar_doacao()
-RETURNS TRIGGER AS $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM Inscricao i
-        JOIN NivelCanal nc ON i.nome_canal = nc.nome_canal 
-            AND i.nro_plataforma = nc.nro_plataforma 
-            AND i.nivel = nc.nivel
-        WHERE i.nick_membro = NEW.nick_usuario
-        AND i.nome_canal = NEW.nome_canal
-        AND i.nro_plataforma = NEW.nro_plataforma
-    ) THEN
-        RAISE EXCEPTION 'Usuário não possui inscrição, portanto não pode realizar a doação';
-    END IF;
-    
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE TRIGGER trg_validar_doacao
-BEFORE INSERT ON Doacao
-FOR EACH ROW EXECUTE FUNCTION validar_doacao();
-
-
-
--- Trigger para Gerenciar Hierarquia de Comentários
-CREATE OR REPLACE FUNCTION gerenciar_hierarquia_comentario()
-RETURNS TRIGGER AS $$
-BEGIN
-    -- Validar se comentário pai existe
-    IF NEW.coment_on IS NOT NULL THEN
-        IF NOT EXISTS (
-            SELECT 1 FROM Comentario 
-            WHERE nome_canal = NEW.nome_canal
-            AND nro_plataforma = NEW.nro_plataforma
-            AND titulo_video = NEW.titulo_video
-            AND dataH_video = NEW.dataH_video
-            AND seq = NEW.coment_on
-        ) THEN
-            RAISE EXCEPTION 'Comentário pai não existe';
+    ELSIF TG_OP = 'UPDATE' THEN
+        IF OLD.nro_plataforma IS DISTINCT FROM NEW.nro_plataforma THEN
+            UPDATE Plataforma SET qtd_users = qtd_users - 1 WHERE nro = OLD.nro_plataforma;
+            UPDATE Plataforma SET qtd_users = qtd_users + 1 WHERE nro = NEW.nro_plataforma;
         END IF;
     END IF;
-    
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER tg_atualizar_qtd_users
+AFTER INSERT OR DELETE OR UPDATE ON nro_plataforma ON PlataformaUsuario
+FOR EACH ROW EXECUTE FUNCTION trg_atualizar_qtd_users();
+
+--Trigger para manter Canal.qtd_visualizacoes atualizada
+
+CREATE OR REPLACE FUNCTION trg_atualizar_visualizacoes()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF TG_OP = 'UPDATE' AND NEW.visu_total <> OLD.visu_total THEN
+        UPDATE Canal
+        SET qtd_visualizacoes = qtd_visualizacoes + (NEW.visu_total - OLD.visu_total)
+        WHERE nome = NEW.nome_canal
+        AND nro_plataforma = NEW.nro_plataforma;
+    ELSIF TG_OP = 'INSERT' THEN
+        -- Adiciona visualizações do novo vídeo
+        UPDATE Canal
+        SET qtd_visualizacoes = qtd_visualizacoes + NEW.visu_total
+        WHERE nome = NEW.nome_canal AND nro_plataforma = NEW.nro_plataforma;
+    END IF;
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE TRIGGER trg_gerenciar_hierarquia_comentario
+CREATE TRIGGER tg_atualizar_visualizacoes
+AFTER UPDATE OR INSERT OF visu_total ON Video
+FOR EACH ROW EXECUTE FUNCTION trg_atualizar_visualizacoes();
+
+--Trigger para garantir que patrocínios vigentes existam
+
+CREATE OR REPLACE FUNCTION trg_patrocinio_unico()
+RETURNS TRIGGER AS $$
+BEGIN
+    DELETE FROM Patrocinio
+    WHERE nro_empresa = NEW.nro_empresa
+      AND nome_canal = NEW.nome_canal
+      AND nro_plataforma = NEW.nro_plataforma;
+
+    RETURN NEW;
+END;
+
+CREATE TRIGGER tg_patrocinio_unico
+BEFORE INSERT ON Patrocinio
+FOR EACH ROW EXECUTE FUNCTION trg_patrocinio_unico();
+
+--Trigger para garantir que membros vigentes existam
+
+CREATE OR REPLACE FUNCTION trg_inscricao_unica()
+RETURNS TRIGGER AS $$
+BEGIN
+    DELETE FROM Inscricao
+    WHERE nome_canal = NEW.nome_canal
+      AND nro_plataforma = NEW.nro_plataforma
+      AND nick_membro = NEW.nick_membro;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER tg_inscricao_unica
+BEFORE INSERT ON Inscricao
+FOR EACH ROW EXECUTE FUNCTION trg_inscricao_unica();
+
+--Trigger para gerar automaticamente seq (número sequencial) dos comentários
+
+CREATE OR REPLACE FUNCTION trg_comentario_seq()
+RETURNS TRIGGER AS $$
+DECLARE
+    maxseq INTEGER;
+BEGIN
+    SELECT COALESCE(MAX(seq), 0) INTO maxseq
+    FROM Comentario
+    WHERE nome_canal = NEW.nome_canal
+      AND nro_plataforma = NEW.nro_plataforma
+      AND titulo_video = NEW.titulo_video
+      AND dataH_video = NEW.dataH_video;
+
+    NEW.seq := maxseq + 1;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER tg_comentario_seq
 BEFORE INSERT ON Comentario
-FOR EACH ROW EXECUTE FUNCTION gerenciar_hierarquia_comentario();
+FOR EACH ROW EXECUTE FUNCTION trg_comentario_seq();
+
+--Trigger para gerar automaticamente seq_pg das doações
+
+CREATE OR REPLACE FUNCTION trg_doacao_seqpg()
+RETURNS TRIGGER AS $$
+DECLARE
+    maxseq INTEGER;
+BEGIN
+    SELECT COALESCE(MAX(seq_pg), 0) INTO maxseq
+    FROM Doacao
+    WHERE nome_canal = NEW.nome_canal
+      AND nro_plataforma = NEW.nro_plataforma
+      AND titulo_video = NEW.titulo_video
+      AND dataH_video = NEW.dataH_video
+      AND nick_usuario = NEW.nick_usuario
+      AND seq_comentario = NEW.seq_comentario;
+
+    NEW.seq_pg := maxseq + 1;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER tg_doacao_seqpg
+BEFORE INSERT ON Doacao
+FOR EACH ROW EXECUTE FUNCTION trg_doacao_seqpg();
+
+--Trigger para garantir integridade e consistência do tipo de doação
+
+CREATE OR REPLACE FUNCTION trg_validar_doacao_subtipo()
+RETURNS TRIGGER AS $$
+DECLARE
+    existe INT;
+BEGIN
+    SELECT COUNT(*) INTO existe
+    FROM Doacao
+    WHERE nome_canal = NEW.nome_canal
+      AND nro_plataforma = NEW.nro_plataforma
+      AND titulo_video = NEW.titulo_video
+      AND dataH_video = NEW.dataH_video
+      AND nick_usuario = NEW.nick_usuario
+      AND seq_comentario = NEW.seq_comentario
+      AND seq_pg = NEW.seq_doacao;
+
+    IF existe = 0 THEN
+        RAISE EXCEPTION 'Doação base não existe. Subtipo inválido.';
+    END IF;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER tg_validar_bitcoin
+BEFORE INSERT ON BitCoin
+FOR EACH ROW EXECUTE FUNCTION trg_validar_doacao_subtipo();
+
+CREATE TRIGGER tg_validar_paypal
+BEFORE INSERT ON PayPal
+FOR EACH ROW EXECUTE FUNCTION trg_validar_doacao_subtipo();
+
+CREATE TRIGGER tg_validar_cartao
+BEFORE INSERT ON CartaoCredito
+FOR EACH ROW EXECUTE FUNCTION trg_validar_doacao_subtipo();
+
+CREATE TRIGGER tg_validar_mecanismo
+BEFORE INSERT ON MecanismoPlat
+FOR EACH ROW EXECUTE FUNCTION trg_validar_doacao_subtipo();
+
+
+--Trigger para Atualização da View Materializada (mv_faturamento_consolidado)
+
+CREATE OR REPLACE FUNCTION trg_refresh_mv_faturamento()
+RETURNS TRIGGER AS $$
+BEGIN
+    REFRESH MATERIALIZED VIEW mv_faturamento_consolidado;
+    
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+-- TRIGGER: Dispara após qualquer alteração nos Patrocínios
+CREATE OR REPLACE TRIGGER trg_refresh_faturamento_patrocinio
+AFTER INSERT OR DELETE OR UPDATE ON Patrocinio
+FOR EACH STATEMENT
+EXECUTE FUNCTION trg_refresh_mv_faturamento();
+
+-- TRIGGER: Dispara após qualquer alteração nas Inscrições de Membros
+CREATE OR REPLACE TRIGGER trg_refresh_faturamento_inscricao
+AFTER INSERT OR DELETE OR UPDATE ON Inscricao
+FOR EACH STATEMENT
+EXECUTE FUNCTION trg_refresh_mv_faturamento();
+
+-- TRIGGER: Dispara após qualquer alteração nas Doações
+CREATE OR REPLACE TRIGGER trg_refresh_faturamento_doacao
+AFTER INSERT OR DELETE OR UPDATE ON Doacao
+FOR EACH STATEMENT
+EXECUTE FUNCTION trg_refresh_mv_faturamento();
