@@ -1,5 +1,5 @@
 -- ============================================================
--- ÍNDICE 1 (parcial, cobridor) - Doacao: acelerar agregações por status
+-- ÍNDICE 1 (parcial) - Doacao: acelerar agregações por status
 -- Utilização: vw_receita_doacoes, fn_doacoes_lidas_por_video, fn_canais_doacoes,
 --            fn_top_doacoes, fn_top_faturamento
 -- Objetivo: index scan apenas nas doações relevantes (recebido ou lido)
