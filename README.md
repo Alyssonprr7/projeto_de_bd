@@ -68,3 +68,11 @@ docker exec -i pg psql -U postgres -c "CREATE DATABASE streamers_db;"
 # Restaurar dump completo
 docker exec -i pg psql -U postgres -d streamers_db < ./dump/dump_all_database.sql
 ```
+
+```bash
+# Restaurar dump completo
+docker exec -i pg pg_restore -U postgres -d streamers_db <  ./dump/backup_data.dump
+```
+
+
+
